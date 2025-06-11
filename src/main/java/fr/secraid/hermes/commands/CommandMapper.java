@@ -14,6 +14,7 @@ import net.dv8tion.jda.api.events.interaction.component.GenericComponentInteract
 import net.dv8tion.jda.api.events.interaction.component.GenericSelectMenuInteractionEvent;
 import net.dv8tion.jda.api.events.session.ReadyEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import net.dv8tion.jda.api.interactions.InteractionContextType;
 import net.dv8tion.jda.api.interactions.InteractionHook;
 import net.dv8tion.jda.api.interactions.commands.DefaultMemberPermissions;
 import net.dv8tion.jda.api.interactions.commands.OptionMapping;
@@ -69,41 +70,48 @@ public class CommandMapper extends ListenerAdapter {
                     }
                     if (method.isAnnotationPresent(ButtonHook.class)) {
                         ButtonHook buttonHook = method.getAnnotation(ButtonHook.class);
-                        if (instance == null) instance = aClass.getConstructor().newInstance();
-                        if (buttonHook.enableMatching()) hooks.add(new HookInfo(
-                                Pattern.compile(buttonHook.value()),
-                                HookInfo.HookTarget.BUTTON,
-                                method,
-                                instance
-                        ));
-                        else hooks.add(new HookInfo(buttonHook.value(), HookInfo.HookTarget.BUTTON, method, instance));
+                        if (buttonHook != null) {
+                            if (instance == null) instance = aClass.getConstructor().newInstance();
+                            if (buttonHook.enableMatching()) hooks.add(new HookInfo(
+                                    Pattern.compile(buttonHook.value()),
+                                    HookInfo.HookTarget.BUTTON,
+                                    method,
+                                    instance
+                            ));
+                            else hooks.add(new HookInfo(buttonHook.value(), HookInfo.HookTarget.BUTTON, method, instance));
+                        }
                     }
                     if (method.isAnnotationPresent(SelectMenuHook.class)) {
                         SelectMenuHook selectMenuHook = method.getAnnotation(SelectMenuHook.class);
-                        if (instance == null) instance = aClass.getConstructor().newInstance();
-                        if (selectMenuHook.enableMatching()) hooks.add(new HookInfo(
-                                Pattern.compile(selectMenuHook.value()),
-                                HookInfo.HookTarget.SELECT_MENU,
-                                method,
-                                instance
-                        ));
-                        else hooks.add(new HookInfo(selectMenuHook.value(), HookInfo.HookTarget.SELECT_MENU,
-                                method, instance));
+                        if (selectMenuHook != null) {
+                            if (instance == null) instance = aClass.getConstructor().newInstance();
+                            if (selectMenuHook.enableMatching()) hooks.add(new HookInfo(
+                                    Pattern.compile(selectMenuHook.value()),
+                                    HookInfo.HookTarget.SELECT_MENU,
+                                    method,
+                                    instance
+                            ));
+                            else hooks.add(new HookInfo(selectMenuHook.value(), HookInfo.HookTarget.SELECT_MENU,
+                                    method, instance));
+                        }
                     }
                     if (method.isAnnotationPresent(ModalHook.class)) {
                         ModalHook modalHook = method.getAnnotation(ModalHook.class);
-                        if (instance == null) instance = aClass.getConstructor().newInstance();
-                        if (modalHook.enableMatching()) hooks.add(new HookInfo(
-                                Pattern.compile(modalHook.value()),
-                                HookInfo.HookTarget.MODAL,
-                                method,
-                                instance
-                        ));
-                        else hooks.add(new HookInfo(modalHook.value(), HookInfo.HookTarget.MODAL,
-                                method, instance));
+                        if (modalHook != null) {
+                            if (instance == null) instance = aClass.getConstructor().newInstance();
+                            if (modalHook.enableMatching()) hooks.add(new HookInfo(
+                                    Pattern.compile(modalHook.value()),
+                                    HookInfo.HookTarget.MODAL,
+                                    method,
+                                    instance
+                            ));
+                            else hooks.add(new HookInfo(modalHook.value(), HookInfo.HookTarget.MODAL,
+                                    method, instance));
+                        }
                     }
                 }
-            } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
+            } catch (InstantiationException | IllegalAccessException | InvocationTargetException |
+                     NoSuchMethodException e) {
                 logger.error("Cannot instantiate class {}", aClass.getName(), e);
             }
         }
@@ -115,23 +123,8 @@ public class CommandMapper extends ListenerAdapter {
         for (Parameter parameter : command.getMethod().getParameters()) {
             if (!parameter.isAnnotationPresent(CommandOption.class)) continue;
             CommandOption commandOption = parameter.getAnnotation(CommandOption.class);
-            Class<?> parameterType = parameter.getType();
-            OptionType optionType = commandOption.type();
-            if (optionType == OptionType.UNKNOWN) {
-                if (parameterType == Message.Attachment.class) optionType = OptionType.ATTACHMENT;
-                else if (parameterType == Boolean.class) optionType = OptionType.BOOLEAN;
-                else if (GuildChannel.class.isAssignableFrom(parameterType)) optionType = OptionType.CHANNEL;
-                else if (parameterType == Double.class) optionType = OptionType.NUMBER;
-                else if (parameterType == Integer.class) optionType = OptionType.INTEGER;
-                else if (parameterType == Long.class) optionType = OptionType.INTEGER;
-                else if (parameterType == Member.class) optionType = OptionType.USER;
-                else if (parameterType == IMentionable.class) optionType = OptionType.MENTIONABLE;
-                else if (parameterType == Role.class) optionType = OptionType.ROLE;
-                else if (parameterType == String.class) optionType = OptionType.STRING;
-                else if (parameterType == User.class) optionType = OptionType.USER;
-                else if (parameterType == Mentions.class) optionType = OptionType.STRING;
-                else throw new UnsupportedOperationException("Invalid class for option");
-            }
+            if (commandOption == null) continue;
+            OptionType optionType = getOptionType(parameter, commandOption);
             OptionData option = new OptionData(
                     optionType,
                     StringUtils.isEmpty(commandOption.value()) ? TextUtils.normalizeCommandName(parameter.getName())
@@ -149,6 +142,27 @@ public class CommandMapper extends ListenerAdapter {
             options.add(option);
         }
         return options;
+    }
+
+    private static OptionType getOptionType(Parameter parameter, CommandOption commandOption) {
+        Class<?> parameterType = parameter.getType();
+        OptionType optionType = commandOption.type();
+        if (optionType == OptionType.UNKNOWN) {
+            if (parameterType == Message.Attachment.class) optionType = OptionType.ATTACHMENT;
+            else if (parameterType == Boolean.class) optionType = OptionType.BOOLEAN;
+            else if (GuildChannel.class.isAssignableFrom(parameterType)) optionType = OptionType.CHANNEL;
+            else if (parameterType == Double.class) optionType = OptionType.NUMBER;
+            else if (parameterType == Integer.class) optionType = OptionType.INTEGER;
+            else if (parameterType == Long.class) optionType = OptionType.INTEGER;
+            else if (parameterType == Member.class) optionType = OptionType.USER;
+            else if (parameterType == IMentionable.class) optionType = OptionType.MENTIONABLE;
+            else if (parameterType == Role.class) optionType = OptionType.ROLE;
+            else if (parameterType == String.class) optionType = OptionType.STRING;
+            else if (parameterType == User.class) optionType = OptionType.USER;
+            else if (parameterType == Mentions.class) optionType = OptionType.STRING;
+            else throw new UnsupportedOperationException("Invalid class for option");
+        }
+        return optionType;
     }
 
     /**
@@ -169,18 +183,22 @@ public class CommandMapper extends ListenerAdapter {
         for (CommandInfo command : commands) {
             String name = command.getName();
             String desc = command.getCommand().description();
+            List<InteractionContextType> contexts = Arrays.asList(command.getCommand().contexts());
+            //noinspection removal TODO: Remove at next major
+            if (command.getCommand().dm()) contexts.add(InteractionContextType.BOT_DM);
+
             if (command.isSubcommand()) {
                 CommandGroup parentCommand = command.getParentCommand();
                 String parentName = parentCommand.value();
                 String parentDesc = parentCommand.description();
                 if (!commandData.containsKey(parentName)) commandData.put(parentName,
                         Commands.slash(parentName, parentDesc)
-                                .setGuildOnly(!parentCommand.dm())
+                                .setContexts(contexts)
                                 .setDefaultPermissions(DefaultMemberPermissions.enabledFor(parentCommand.permissions())));
                 commandData.get(parentName).addSubcommands(new SubcommandData(name, desc)
                         .addOptions(getOptions(command)));
             } else commandData.put(name, Commands.slash(name, desc)
-                    .setGuildOnly(!command.getCommand().dm())
+                    .setContexts(contexts)
                     .setDefaultPermissions(DefaultMemberPermissions.enabledFor(command.getCommand().permissions()))
                     .addOptions(getOptions(command))
             );
@@ -225,6 +243,7 @@ public class CommandMapper extends ListenerAdapter {
                 Object object;
                 if (parameter.isAnnotationPresent(CommandOption.class)) {
                     CommandOption commandOption = parameter.getAnnotation(CommandOption.class);
+                    if (commandOption == null) continue;
                     OptionMapping mapping = event.getOption(commandOption.value());
                     if (mapping == null) object = null;
                     else if (parameterType == Message.Attachment.class) object = mapping.getAsAttachment();
@@ -312,7 +331,7 @@ public class CommandMapper extends ListenerAdapter {
             }
             try {
                 hook.getMethod().invoke(hook.getInstance(), objects);
-            }  catch (IllegalAccessException e) {
+            } catch (IllegalAccessException e) {
                 logger.error("Cannot access hook {}", customId, e);
             } catch (InvocationTargetException e) {
                 logger.error("Encountered unexpected error while executing hook {}", customId, e);
@@ -353,5 +372,6 @@ public class CommandMapper extends ListenerAdapter {
         return ready;
     }
 
-    private static final Consumer<Object> noop = o -> {};
+    private static final Consumer<Object> noop = o -> {
+    };
 }

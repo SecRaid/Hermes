@@ -1,6 +1,7 @@
 package fr.secraid.hermes.commands;
 
 import net.dv8tion.jda.api.Permission;
+import net.dv8tion.jda.api.interactions.InteractionContextType;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -21,14 +22,22 @@ public @interface Command {
      * @return The command description, defaults to "No description provided"
      */
     String description() default "No description provided";
-    @Deprecated
+
+    @Deprecated(forRemoval = true, since = "1.0.0")
     boolean legacy() default false;
 
     /**
      * Determine if the command can be executed in DMs, defaults to false
      * @return Determine if the command can be executed in DMs, defaults to false
+     * @deprecated use contexts()
      */
+    @Deprecated(forRemoval = true, since = "1.1.0")
     boolean dm() default false;
+
+    /**
+     * @return the contexts where the command can be executed (defaults to guild only)
+     */
+    InteractionContextType[] contexts() default {InteractionContextType.GUILD};
 
     /**
      * The permissions needed to execute the command. EXCLUSIVE
