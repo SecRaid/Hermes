@@ -48,6 +48,10 @@ public class CommandInfo {
         return commandClass.isAnnotationPresent(CommandGroup.class);
     }
 
+    public boolean isGuildCommand() {
+        return command.guild() != Long.MIN_VALUE;
+    }
+
     public CommandGroup getParentCommand() {
         if (!isSubcommand()) return null;
         return commandClass.getAnnotation(CommandGroup.class);

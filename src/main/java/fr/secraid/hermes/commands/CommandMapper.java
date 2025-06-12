@@ -78,7 +78,8 @@ public class CommandMapper extends ListenerAdapter {
                                     method,
                                     instance
                             ));
-                            else hooks.add(new HookInfo(buttonHook.value(), HookInfo.HookTarget.BUTTON, method, instance));
+                            else
+                                hooks.add(new HookInfo(buttonHook.value(), HookInfo.HookTarget.BUTTON, method, instance));
                         }
                     }
                     if (method.isAnnotationPresent(SelectMenuHook.class)) {
@@ -178,7 +179,8 @@ public class CommandMapper extends ListenerAdapter {
     public void onReady(@NotNull ReadyEvent event) {
         if (ready) return;
         ready = true;
-        Map<String, SlashCommandData> commandData = new HashMap<>();
+        Map<String, SlashCommandData> commandsData = new HashMap<>();
+        Map<Long, Map<String, SlashCommandData>> guildCommandsData = new HashMap<>();
 
         for (CommandInfo command : commands) {
             String name = command.getName();
@@ -191,31 +193,62 @@ public class CommandMapper extends ListenerAdapter {
                 CommandGroup parentCommand = command.getParentCommand();
                 String parentName = parentCommand.value();
                 String parentDesc = parentCommand.description();
-                if (!commandData.containsKey(parentName)) commandData.put(parentName,
-                        Commands.slash(parentName, parentDesc)
-                                .setContexts(contexts)
-                                .setDefaultPermissions(DefaultMemberPermissions.enabledFor(parentCommand.permissions())));
-                commandData.get(parentName).addSubcommands(new SubcommandData(name, desc)
+                if (!commandsData.containsKey(parentName)) {
+                    SlashCommandData data = Commands.slash(parentName, parentDesc)
+                            .setContexts(contexts)
+                            .setDefaultPermissions(DefaultMemberPermissions.enabledFor(parentCommand.permissions()));
+                    if (command.isGuildCommand()) {
+                        long guild = command.getCommand().guild();
+                        if (!guildCommandsData.containsKey(guild))
+                            guildCommandsData.put(guild, new HashMap<>());
+                        guildCommandsData.get(guild).put(parentName, data);
+                    } else commandsData.put(parentName, data);
+                }
+                commandsData.get(parentName).addSubcommands(new SubcommandData(name, desc)
                         .addOptions(getOptions(command)));
-            } else commandData.put(name, Commands.slash(name, desc)
-                    .setContexts(contexts)
-                    .setDefaultPermissions(DefaultMemberPermissions.enabledFor(command.getCommand().permissions()))
-                    .addOptions(getOptions(command))
-            );
+            } else {
+                SlashCommandData data = Commands.slash(name, desc)
+                        .setContexts(contexts)
+                        .setDefaultPermissions(DefaultMemberPermissions.enabledFor(command.getCommand().permissions()))
+                        .addOptions(getOptions(command));
+                if (command.isGuildCommand()) {
+                    long guild = command.getCommand().guild();
+                    if (!guildCommandsData.containsKey(guild))
+                        guildCommandsData.put(guild, new HashMap<>());
+                    guildCommandsData.get(guild).put(name, data);
+                } else commandsData.put(name, data);
+            }
         }
 
         JDA jda = event.getJDA();
         List<net.dv8tion.jda.api.interactions.commands.Command> jdaCommands = jda.updateCommands()
-                .addCommands(commandData.values())
+                .addCommands(commandsData.values())
                 .complete();
         for (net.dv8tion.jda.api.interactions.commands.Command jdaCommand : jdaCommands) {
             for (CommandInfo command : commands) {
-                if (command.getName().equals(jdaCommand.getName())) {
+                if (command.getName().equals(jdaCommand.getName()) && !command.isGuildCommand()) {
                     command.setJdaCommand(jdaCommand);
                     break;
                 }
             }
         }
+        for (Map.Entry<Long, Map<String, SlashCommandData>> entry : guildCommandsData.entrySet()) {
+            Guild guild = jda.getGuildById(entry.getKey());
+            if (guild == null) {
+                logger.error("Cannot update guild commands for guild {}: Guild not found", entry.getKey());
+                continue;
+            }
+            jdaCommands = guild.updateCommands().addCommands(entry.getValue().values()).complete();
+            for (net.dv8tion.jda.api.interactions.commands.Command jdaCommand : jdaCommands) {
+                for (CommandInfo command : commands) {
+                    if (command.getName().equals(jdaCommand.getName()) && command.isGuildCommand()) {
+                        command.setJdaCommand(jdaCommand);
+                        break;
+                    }
+                }
+            }
+        }
+
     }
 
     @NotNull
@@ -231,6 +264,9 @@ public class CommandMapper extends ListenerAdapter {
         for (CommandInfo command : commands) {
             if (!event.getName().equals(command.isSubcommand() ? command.getParentCommand().value() : command.getName()))
                 continue;
+            Guild guild = event.getGuild();
+            if (guild != null && command.isGuildCommand()
+                    && command.getCommand().guild() != event.getGuild().getIdLong()) continue;
             String sub = event.getSubcommandName();
             if (command.isSubcommand() && (sub == null || !command.getName().equals(sub))) continue;
             InteractionHook hook = null;

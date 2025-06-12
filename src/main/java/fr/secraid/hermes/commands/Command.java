@@ -49,6 +49,7 @@ public @interface Command {
      * The guild where the command should be registered, defaults to Long.MIN_VALUE meaning the mapper will register the command as a global command
      * @return The guild where the command should be registered, defaults to Long.MIN_VALUE meaning the mapper will register the command as a global command
      */
+    // TODO: implement
     long guild() default Long.MIN_VALUE;
 
     /**
