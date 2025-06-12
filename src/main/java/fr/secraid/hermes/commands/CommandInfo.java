@@ -1,19 +1,17 @@
 package fr.secraid.hermes.commands;
 
-import fr.secraid.hermes.utils.StringUtils;
-import fr.secraid.hermes.utils.TextUtils;
 import org.jetbrains.annotations.NotNull;
 
 import java.lang.reflect.Method;
 
-public class CommandInfo {
+public class CommandInfo<T> {
     private final Class<?> commandClass;
     private final Object instance;
     private final Method method;
-    private final Command command;
+    private final T command;
     private net.dv8tion.jda.api.interactions.commands.Command jdaCommand;
 
-    protected CommandInfo(@NotNull Class<?> commandClass, Object instance, Method method, Command command) {
+    protected CommandInfo(@NotNull Class<?> commandClass, Object instance, Method method, T command) {
         this.commandClass = commandClass;
         this.instance = instance;
         this.command = command;
@@ -40,24 +38,7 @@ public class CommandInfo {
         return method;
     }
 
-    public Command getCommand() {
+    public T getCommand() {
         return command;
-    }
-
-    public boolean isSubcommand() {
-        return commandClass.isAnnotationPresent(CommandGroup.class);
-    }
-
-    public boolean isGuildCommand() {
-        return command.guild() != Long.MIN_VALUE;
-    }
-
-    public CommandGroup getParentCommand() {
-        if (!isSubcommand()) return null;
-        return commandClass.getAnnotation(CommandGroup.class);
-    }
-
-    public String getName() {
-        return StringUtils.isEmpty(command.value()) ? TextUtils.normalizeCommandName(method.getName()) : command.value();
     }
 }

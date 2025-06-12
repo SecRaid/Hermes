@@ -6,8 +6,11 @@ import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.entities.*;
 import net.dv8tion.jda.api.entities.channel.middleman.GuildChannel;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
+import net.dv8tion.jda.api.entities.channel.unions.MessageChannelUnion;
 import net.dv8tion.jda.api.events.interaction.GenericInteractionCreateEvent;
 import net.dv8tion.jda.api.events.interaction.ModalInteractionEvent;
+import net.dv8tion.jda.api.events.interaction.command.GenericCommandInteractionEvent;
+import net.dv8tion.jda.api.events.interaction.command.MessageContextInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.GenericComponentInteractionCreateEvent;
@@ -19,10 +22,7 @@ import net.dv8tion.jda.api.interactions.InteractionHook;
 import net.dv8tion.jda.api.interactions.commands.DefaultMemberPermissions;
 import net.dv8tion.jda.api.interactions.commands.OptionMapping;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
-import net.dv8tion.jda.api.interactions.commands.build.Commands;
-import net.dv8tion.jda.api.interactions.commands.build.OptionData;
-import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
-import net.dv8tion.jda.api.interactions.commands.build.SubcommandData;
+import net.dv8tion.jda.api.interactions.commands.build.*;
 import net.dv8tion.jda.api.sharding.ShardManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -41,9 +41,10 @@ import java.util.regex.Pattern;
 
 public class CommandMapper extends ListenerAdapter {
     private static final Logger logger = LoggerFactory.getLogger(CommandMapper.class);
-    private final List<CommandInfo> commands = new ArrayList<>();
+    private final List<SlashCommandInfo> commands = new ArrayList<>();
     private final Map<Class<?>, Object> customContexts = new HashMap<>();
     private final List<HookInfo> hooks = new ArrayList<>();
+    private final Map<String, CommandInfo<MessageCommand>> messageCommands = new HashMap<>();
     private boolean ready = false;
 
     /**
@@ -61,7 +62,7 @@ public class CommandMapper extends ListenerAdapter {
                     if (method.isAnnotationPresent(Command.class)) {
                         if (instance == null) instance = aClass.getConstructor().newInstance();
                         Command command = method.getAnnotation(Command.class);
-                        commands.add(new CommandInfo(
+                        commands.add(new SlashCommandInfo(
                                 aClass,
                                 instance,
                                 method,
@@ -110,6 +111,19 @@ public class CommandMapper extends ListenerAdapter {
                                     method, instance));
                         }
                     }
+                    if (method.isAnnotationPresent(MessageCommand.class)) {
+                        MessageCommand messageCommand = method.getAnnotation(MessageCommand.class);
+                        if (messageCommand != null) {
+                            String name = messageCommand.value();
+                            if (name.isEmpty()) name = TextUtils.normalizeCamelCase(method.getName());
+                            messageCommands.put(name, new CommandInfo<>(
+                                    aClass,
+                                    instance,
+                                    method,
+                                    messageCommand
+                            ));
+                        }
+                    }
                 }
             } catch (InstantiationException | IllegalAccessException | InvocationTargetException |
                      NoSuchMethodException e) {
@@ -119,7 +133,7 @@ public class CommandMapper extends ListenerAdapter {
     }
 
     @NotNull
-    private List<OptionData> getOptions(@NotNull CommandInfo command) {
+    private List<OptionData> getOptions(@NotNull SlashCommandInfo command) {
         List<OptionData> options = new LinkedList<>();
         for (Parameter parameter : command.getMethod().getParameters()) {
             if (!parameter.isAnnotationPresent(CommandOption.class)) continue;
@@ -179,10 +193,10 @@ public class CommandMapper extends ListenerAdapter {
     public void onReady(@NotNull ReadyEvent event) {
         if (ready) return;
         ready = true;
-        Map<String, SlashCommandData> commandsData = new HashMap<>();
+        Map<String, CommandData> commandsData = new HashMap<>();
         Map<Long, Map<String, SlashCommandData>> guildCommandsData = new HashMap<>();
 
-        for (CommandInfo command : commands) {
+        for (SlashCommandInfo command : commands) {
             String name = command.getName();
             String desc = command.getCommand().description();
             List<InteractionContextType> contexts = Arrays.asList(command.getCommand().contexts());
@@ -204,7 +218,8 @@ public class CommandMapper extends ListenerAdapter {
                         guildCommandsData.get(guild).put(parentName, data);
                     } else commandsData.put(parentName, data);
                 }
-                commandsData.get(parentName).addSubcommands(new SubcommandData(name, desc)
+                ((SlashCommandData) commandsData.get(parentName))
+                        .addSubcommands(new SubcommandData(name, desc)
                         .addOptions(getOptions(command)));
             } else {
                 SlashCommandData data = Commands.slash(name, desc)
@@ -220,12 +235,14 @@ public class CommandMapper extends ListenerAdapter {
             }
         }
 
+        for (String s : messageCommands.keySet()) commandsData.put("MC-" + s, Commands.message(s));
+
         JDA jda = event.getJDA();
         List<net.dv8tion.jda.api.interactions.commands.Command> jdaCommands = jda.updateCommands()
                 .addCommands(commandsData.values())
                 .complete();
         for (net.dv8tion.jda.api.interactions.commands.Command jdaCommand : jdaCommands) {
-            for (CommandInfo command : commands) {
+            for (SlashCommandInfo command : commands) {
                 if (command.getName().equals(jdaCommand.getName()) && !command.isGuildCommand()) {
                     command.setJdaCommand(jdaCommand);
                     break;
@@ -240,7 +257,7 @@ public class CommandMapper extends ListenerAdapter {
             }
             jdaCommands = guild.updateCommands().addCommands(entry.getValue().values()).complete();
             for (net.dv8tion.jda.api.interactions.commands.Command jdaCommand : jdaCommands) {
-                for (CommandInfo command : commands) {
+                for (SlashCommandInfo command : commands) {
                     if (command.getName().equals(jdaCommand.getName()) && command.isGuildCommand()) {
                         command.setJdaCommand(jdaCommand);
                         break;
@@ -261,7 +278,7 @@ public class CommandMapper extends ListenerAdapter {
 
     @Override
     public void onSlashCommandInteraction(@NotNull SlashCommandInteractionEvent event) {
-        for (CommandInfo command : commands) {
+        for (SlashCommandInfo command : commands) {
             if (!event.getName().equals(command.isSubcommand() ? command.getParentCommand().value() : command.getName()))
                 continue;
             Guild guild = event.getGuild();
@@ -295,18 +312,8 @@ public class CommandMapper extends ListenerAdapter {
                     else if (parameterType == User.class) object = mapping.getAsUser();
                     else if (parameterType == Mentions.class) object = mapping.getMentions();
                     else throw new UnsupportedOperationException("Invalid class for option");
-                } else {
-                    if (customContexts.containsKey(parameterType)) object = customContexts.get(parameterType);
-                    else if (parameterType == SlashCommandInteractionEvent.class) object = event;
-                    else if (parameterType == InteractionHook.class) object = hook;
-                    else if (parameterType == User.class) object = event.getUser();
-                    else if (parameterType == Member.class) object = event.getMember();
-                    else if (parameterType == Guild.class) object = event.getGuild();
-                    else if (MessageChannel.class.isAssignableFrom(parameterType)) object = event.getChannel();
-                    else if (parameterType == JDA.class) object = event.getJDA().getShardManager();
-                    else if (parameterType == ShardManager.class) object = event.getJDA();
-                    else throw new UnsupportedOperationException("Unsupported parameter type");
-                }
+                } else object = parameterType == InteractionHook.class ? hook
+                        : getCorrespondingParameter(parameterType, event);
                 objects[i] = object;
             }
             try {
@@ -325,6 +332,44 @@ public class CommandMapper extends ListenerAdapter {
                 )).queue(noop, noop);
             }
         }
+    }
+
+    @Override
+    public void onMessageContextInteraction(@NotNull MessageContextInteractionEvent event) {
+        if (!messageCommands.containsKey(event.getName())) return;
+        CommandInfo<MessageCommand> command = messageCommands.get(event.getName());
+        Parameter[] parameters = command.getMethod().getParameters();
+        Object[] objects = new Object[parameters.length];
+        for (int i = 0; i < parameters.length; i++) {
+            Parameter parameter = parameters[i];
+            Class<?> parameterType = parameter.getType();
+            Object object = getCorrespondingParameter(parameterType, event);
+            objects[i] = object;
+        }
+        try {
+            command.getMethod().invoke(command.getInstance(), objects);
+        } catch (IllegalAccessException e) {
+            logger.error("Cannot access command {}", event.getName(), e);
+        } catch (InvocationTargetException e) {
+            logger.error("Encountered unexpected error while executing command {}", event.getFullCommandName(), e);
+            MessageChannelUnion channel = event.getChannel();
+            if (channel != null) channel.sendMessage(String.format(
+                    ":x: Encountered exception while executing command. Please try again later\nError:\n```%s```",
+                    e.getMessage()
+            )).queue(noop, noop);
+        }
+    }
+
+    private Object getCorrespondingParameter(Class<?> parameterType, GenericCommandInteractionEvent event) {
+        if (customContexts.containsKey(parameterType)) return customContexts.get(parameterType);
+        else if (parameterType == SlashCommandInteractionEvent.class) return event;
+        else if (parameterType == User.class) return event.getUser();
+        else if (parameterType == Member.class) return event.getMember();
+        else if (parameterType == Guild.class) return event.getGuild();
+        else if (MessageChannel.class.isAssignableFrom(parameterType)) return event.getChannel();
+        else if (parameterType == JDA.class) return event.getJDA().getShardManager();
+        else if (parameterType == ShardManager.class) return event.getJDA();
+        else throw new UnsupportedOperationException("Unsupported parameter type: " + parameterType.getSimpleName());
     }
 
     @Nullable

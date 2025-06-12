@@ -12,8 +12,8 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Command {
     /**
-     * The command name, defaults to "", meaning the mapper will automatically generate the command name from the method name
-     * @return The command name, defaults to "", meaning the mapper will automatically generate the command name from the method name
+     * The slash command name, defaults to "", meaning the mapper will automatically generate the command name from the method name
+     * @return The slash command name, defaults to "", meaning the mapper will automatically generate the command name from the method name
      */
     String value() default "";
 

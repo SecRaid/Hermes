@@ -12,4 +12,9 @@ public class TextUtils {
     public static String normalizeCommandName(@NotNull String s) {
         return s.replaceAll("(?<!^)(?=[A-Z])", "-").toLowerCase();
     }
+
+    @NotNull
+    public static String normalizeCamelCase(@NotNull String s) {
+        return s.replaceAll("(?<!^)(?=[A-Z])", " ");
+    }
 }
