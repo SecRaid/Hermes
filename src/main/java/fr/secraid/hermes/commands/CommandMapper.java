@@ -6,22 +6,23 @@ import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.entities.*;
 import net.dv8tion.jda.api.entities.channel.middleman.GuildChannel;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
+import net.dv8tion.jda.api.entities.channel.unions.MessageChannelUnion;
 import net.dv8tion.jda.api.events.interaction.GenericInteractionCreateEvent;
 import net.dv8tion.jda.api.events.interaction.ModalInteractionEvent;
+import net.dv8tion.jda.api.events.interaction.command.GenericCommandInteractionEvent;
+import net.dv8tion.jda.api.events.interaction.command.MessageContextInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.GenericComponentInteractionCreateEvent;
 import net.dv8tion.jda.api.events.interaction.component.GenericSelectMenuInteractionEvent;
 import net.dv8tion.jda.api.events.session.ReadyEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import net.dv8tion.jda.api.interactions.InteractionContextType;
 import net.dv8tion.jda.api.interactions.InteractionHook;
 import net.dv8tion.jda.api.interactions.commands.DefaultMemberPermissions;
 import net.dv8tion.jda.api.interactions.commands.OptionMapping;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
-import net.dv8tion.jda.api.interactions.commands.build.Commands;
-import net.dv8tion.jda.api.interactions.commands.build.OptionData;
-import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
-import net.dv8tion.jda.api.interactions.commands.build.SubcommandData;
+import net.dv8tion.jda.api.interactions.commands.build.*;
 import net.dv8tion.jda.api.sharding.ShardManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -40,9 +41,10 @@ import java.util.regex.Pattern;
 
 public class CommandMapper extends ListenerAdapter {
     private static final Logger logger = LoggerFactory.getLogger(CommandMapper.class);
-    private final List<CommandInfo> commands = new ArrayList<>();
+    private final List<SlashCommandInfo> commands = new ArrayList<>();
     private final Map<Class<?>, Object> customContexts = new HashMap<>();
     private final List<HookInfo> hooks = new ArrayList<>();
+    private final Map<String, CommandInfo<MessageCommand>> messageCommands = new HashMap<>();
     private boolean ready = false;
 
     /**
@@ -60,7 +62,7 @@ public class CommandMapper extends ListenerAdapter {
                     if (method.isAnnotationPresent(Command.class)) {
                         if (instance == null) instance = aClass.getConstructor().newInstance();
                         Command command = method.getAnnotation(Command.class);
-                        commands.add(new CommandInfo(
+                        commands.add(new SlashCommandInfo(
                                 aClass,
                                 instance,
                                 method,
@@ -69,69 +71,75 @@ public class CommandMapper extends ListenerAdapter {
                     }
                     if (method.isAnnotationPresent(ButtonHook.class)) {
                         ButtonHook buttonHook = method.getAnnotation(ButtonHook.class);
-                        if (instance == null) instance = aClass.getConstructor().newInstance();
-                        if (buttonHook.enableMatching()) hooks.add(new HookInfo(
-                                Pattern.compile(buttonHook.value()),
-                                HookInfo.HookTarget.BUTTON,
-                                method,
-                                instance
-                        ));
-                        else hooks.add(new HookInfo(buttonHook.value(), HookInfo.HookTarget.BUTTON, method, instance));
+                        if (buttonHook != null) {
+                            if (instance == null) instance = aClass.getConstructor().newInstance();
+                            if (buttonHook.enableMatching()) hooks.add(new HookInfo(
+                                    Pattern.compile(buttonHook.value()),
+                                    HookInfo.HookTarget.BUTTON,
+                                    method,
+                                    instance
+                            ));
+                            else
+                                hooks.add(new HookInfo(buttonHook.value(), HookInfo.HookTarget.BUTTON, method, instance));
+                        }
                     }
                     if (method.isAnnotationPresent(SelectMenuHook.class)) {
                         SelectMenuHook selectMenuHook = method.getAnnotation(SelectMenuHook.class);
-                        if (instance == null) instance = aClass.getConstructor().newInstance();
-                        if (selectMenuHook.enableMatching()) hooks.add(new HookInfo(
-                                Pattern.compile(selectMenuHook.value()),
-                                HookInfo.HookTarget.SELECT_MENU,
-                                method,
-                                instance
-                        ));
-                        else hooks.add(new HookInfo(selectMenuHook.value(), HookInfo.HookTarget.SELECT_MENU,
-                                method, instance));
+                        if (selectMenuHook != null) {
+                            if (instance == null) instance = aClass.getConstructor().newInstance();
+                            if (selectMenuHook.enableMatching()) hooks.add(new HookInfo(
+                                    Pattern.compile(selectMenuHook.value()),
+                                    HookInfo.HookTarget.SELECT_MENU,
+                                    method,
+                                    instance
+                            ));
+                            else hooks.add(new HookInfo(selectMenuHook.value(), HookInfo.HookTarget.SELECT_MENU,
+                                    method, instance));
+                        }
                     }
                     if (method.isAnnotationPresent(ModalHook.class)) {
                         ModalHook modalHook = method.getAnnotation(ModalHook.class);
-                        if (instance == null) instance = aClass.getConstructor().newInstance();
-                        if (modalHook.enableMatching()) hooks.add(new HookInfo(
-                                Pattern.compile(modalHook.value()),
-                                HookInfo.HookTarget.MODAL,
-                                method,
-                                instance
-                        ));
-                        else hooks.add(new HookInfo(modalHook.value(), HookInfo.HookTarget.MODAL,
-                                method, instance));
+                        if (modalHook != null) {
+                            if (instance == null) instance = aClass.getConstructor().newInstance();
+                            if (modalHook.enableMatching()) hooks.add(new HookInfo(
+                                    Pattern.compile(modalHook.value()),
+                                    HookInfo.HookTarget.MODAL,
+                                    method,
+                                    instance
+                            ));
+                            else hooks.add(new HookInfo(modalHook.value(), HookInfo.HookTarget.MODAL,
+                                    method, instance));
+                        }
+                    }
+                    if (method.isAnnotationPresent(MessageCommand.class)) {
+                        MessageCommand messageCommand = method.getAnnotation(MessageCommand.class);
+                        if (messageCommand != null) {
+                            String name = messageCommand.value();
+                            if (name.isEmpty()) name = TextUtils.normalizeCamelCase(method.getName());
+                            messageCommands.put(name, new CommandInfo<>(
+                                    aClass,
+                                    instance,
+                                    method,
+                                    messageCommand
+                            ));
+                        }
                     }
                 }
-            } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
+            } catch (InstantiationException | IllegalAccessException | InvocationTargetException |
+                     NoSuchMethodException e) {
                 logger.error("Cannot instantiate class {}", aClass.getName(), e);
             }
         }
     }
 
     @NotNull
-    private List<OptionData> getOptions(@NotNull CommandInfo command) {
+    private List<OptionData> getOptions(@NotNull SlashCommandInfo command) {
         List<OptionData> options = new LinkedList<>();
         for (Parameter parameter : command.getMethod().getParameters()) {
             if (!parameter.isAnnotationPresent(CommandOption.class)) continue;
             CommandOption commandOption = parameter.getAnnotation(CommandOption.class);
-            Class<?> parameterType = parameter.getType();
-            OptionType optionType = commandOption.type();
-            if (optionType == OptionType.UNKNOWN) {
-                if (parameterType == Message.Attachment.class) optionType = OptionType.ATTACHMENT;
-                else if (parameterType == Boolean.class) optionType = OptionType.BOOLEAN;
-                else if (GuildChannel.class.isAssignableFrom(parameterType)) optionType = OptionType.CHANNEL;
-                else if (parameterType == Double.class) optionType = OptionType.NUMBER;
-                else if (parameterType == Integer.class) optionType = OptionType.INTEGER;
-                else if (parameterType == Long.class) optionType = OptionType.INTEGER;
-                else if (parameterType == Member.class) optionType = OptionType.USER;
-                else if (parameterType == IMentionable.class) optionType = OptionType.MENTIONABLE;
-                else if (parameterType == Role.class) optionType = OptionType.ROLE;
-                else if (parameterType == String.class) optionType = OptionType.STRING;
-                else if (parameterType == User.class) optionType = OptionType.USER;
-                else if (parameterType == Mentions.class) optionType = OptionType.STRING;
-                else throw new UnsupportedOperationException("Invalid class for option");
-            }
+            if (commandOption == null) continue;
+            OptionType optionType = getOptionType(parameter, commandOption);
             OptionData option = new OptionData(
                     optionType,
                     StringUtils.isEmpty(commandOption.value()) ? TextUtils.normalizeCommandName(parameter.getName())
@@ -151,6 +159,27 @@ public class CommandMapper extends ListenerAdapter {
         return options;
     }
 
+    private static OptionType getOptionType(Parameter parameter, CommandOption commandOption) {
+        Class<?> parameterType = parameter.getType();
+        OptionType optionType = commandOption.type();
+        if (optionType == OptionType.UNKNOWN) {
+            if (parameterType == Message.Attachment.class) optionType = OptionType.ATTACHMENT;
+            else if (parameterType == Boolean.class) optionType = OptionType.BOOLEAN;
+            else if (GuildChannel.class.isAssignableFrom(parameterType)) optionType = OptionType.CHANNEL;
+            else if (parameterType == Double.class) optionType = OptionType.NUMBER;
+            else if (parameterType == Integer.class) optionType = OptionType.INTEGER;
+            else if (parameterType == Long.class) optionType = OptionType.INTEGER;
+            else if (parameterType == Member.class) optionType = OptionType.USER;
+            else if (parameterType == IMentionable.class) optionType = OptionType.MENTIONABLE;
+            else if (parameterType == Role.class) optionType = OptionType.ROLE;
+            else if (parameterType == String.class) optionType = OptionType.STRING;
+            else if (parameterType == User.class) optionType = OptionType.USER;
+            else if (parameterType == Mentions.class) optionType = OptionType.STRING;
+            else throw new UnsupportedOperationException("Invalid class for option");
+        }
+        return optionType;
+    }
+
     /**
      * Register a custom context, allowing you to call it inside your commands handles. If a context of the same class exists, it will be overwritten
      *
@@ -164,40 +193,79 @@ public class CommandMapper extends ListenerAdapter {
     public void onReady(@NotNull ReadyEvent event) {
         if (ready) return;
         ready = true;
-        Map<String, SlashCommandData> commandData = new HashMap<>();
+        Map<String, CommandData> commandsData = new HashMap<>();
+        Map<Long, Map<String, SlashCommandData>> guildCommandsData = new HashMap<>();
 
-        for (CommandInfo command : commands) {
+        for (SlashCommandInfo command : commands) {
             String name = command.getName();
             String desc = command.getCommand().description();
+            List<InteractionContextType> contexts = Arrays.asList(command.getCommand().contexts());
+            //noinspection removal TODO: Remove at next major
+            if (command.getCommand().dm()) contexts.add(InteractionContextType.BOT_DM);
+
             if (command.isSubcommand()) {
                 CommandGroup parentCommand = command.getParentCommand();
                 String parentName = parentCommand.value();
                 String parentDesc = parentCommand.description();
-                if (!commandData.containsKey(parentName)) commandData.put(parentName,
-                        Commands.slash(parentName, parentDesc)
-                                .setGuildOnly(!parentCommand.dm())
-                                .setDefaultPermissions(DefaultMemberPermissions.enabledFor(parentCommand.permissions())));
-                commandData.get(parentName).addSubcommands(new SubcommandData(name, desc)
+                if (!commandsData.containsKey(parentName)) {
+                    SlashCommandData data = Commands.slash(parentName, parentDesc)
+                            .setContexts(contexts)
+                            .setDefaultPermissions(DefaultMemberPermissions.enabledFor(parentCommand.permissions()));
+                    if (command.isGuildCommand()) {
+                        long guild = command.getCommand().guild();
+                        if (!guildCommandsData.containsKey(guild))
+                            guildCommandsData.put(guild, new HashMap<>());
+                        guildCommandsData.get(guild).put(parentName, data);
+                    } else commandsData.put(parentName, data);
+                }
+                ((SlashCommandData) commandsData.get(parentName))
+                        .addSubcommands(new SubcommandData(name, desc)
                         .addOptions(getOptions(command)));
-            } else commandData.put(name, Commands.slash(name, desc)
-                    .setGuildOnly(!command.getCommand().dm())
-                    .setDefaultPermissions(DefaultMemberPermissions.enabledFor(command.getCommand().permissions()))
-                    .addOptions(getOptions(command))
-            );
+            } else {
+                SlashCommandData data = Commands.slash(name, desc)
+                        .setContexts(contexts)
+                        .setDefaultPermissions(DefaultMemberPermissions.enabledFor(command.getCommand().permissions()))
+                        .addOptions(getOptions(command));
+                if (command.isGuildCommand()) {
+                    long guild = command.getCommand().guild();
+                    if (!guildCommandsData.containsKey(guild))
+                        guildCommandsData.put(guild, new HashMap<>());
+                    guildCommandsData.get(guild).put(name, data);
+                } else commandsData.put(name, data);
+            }
         }
+
+        for (String s : messageCommands.keySet()) commandsData.put("MC-" + s, Commands.message(s));
 
         JDA jda = event.getJDA();
         List<net.dv8tion.jda.api.interactions.commands.Command> jdaCommands = jda.updateCommands()
-                .addCommands(commandData.values())
+                .addCommands(commandsData.values())
                 .complete();
         for (net.dv8tion.jda.api.interactions.commands.Command jdaCommand : jdaCommands) {
-            for (CommandInfo command : commands) {
-                if (command.getName().equals(jdaCommand.getName())) {
+            for (SlashCommandInfo command : commands) {
+                if (command.getName().equals(jdaCommand.getName()) && !command.isGuildCommand()) {
                     command.setJdaCommand(jdaCommand);
                     break;
                 }
             }
         }
+        for (Map.Entry<Long, Map<String, SlashCommandData>> entry : guildCommandsData.entrySet()) {
+            Guild guild = jda.getGuildById(entry.getKey());
+            if (guild == null) {
+                logger.error("Cannot update guild commands for guild {}: Guild not found", entry.getKey());
+                continue;
+            }
+            jdaCommands = guild.updateCommands().addCommands(entry.getValue().values()).complete();
+            for (net.dv8tion.jda.api.interactions.commands.Command jdaCommand : jdaCommands) {
+                for (SlashCommandInfo command : commands) {
+                    if (command.getName().equals(jdaCommand.getName()) && command.isGuildCommand()) {
+                        command.setJdaCommand(jdaCommand);
+                        break;
+                    }
+                }
+            }
+        }
+
     }
 
     @NotNull
@@ -210,9 +278,12 @@ public class CommandMapper extends ListenerAdapter {
 
     @Override
     public void onSlashCommandInteraction(@NotNull SlashCommandInteractionEvent event) {
-        for (CommandInfo command : commands) {
+        for (SlashCommandInfo command : commands) {
             if (!event.getName().equals(command.isSubcommand() ? command.getParentCommand().value() : command.getName()))
                 continue;
+            Guild guild = event.getGuild();
+            if (guild != null && command.isGuildCommand()
+                    && command.getCommand().guild() != event.getGuild().getIdLong()) continue;
             String sub = event.getSubcommandName();
             if (command.isSubcommand() && (sub == null || !command.getName().equals(sub))) continue;
             InteractionHook hook = null;
@@ -225,6 +296,7 @@ public class CommandMapper extends ListenerAdapter {
                 Object object;
                 if (parameter.isAnnotationPresent(CommandOption.class)) {
                     CommandOption commandOption = parameter.getAnnotation(CommandOption.class);
+                    if (commandOption == null) continue;
                     OptionMapping mapping = event.getOption(commandOption.value());
                     if (mapping == null) object = null;
                     else if (parameterType == Message.Attachment.class) object = mapping.getAsAttachment();
@@ -240,18 +312,8 @@ public class CommandMapper extends ListenerAdapter {
                     else if (parameterType == User.class) object = mapping.getAsUser();
                     else if (parameterType == Mentions.class) object = mapping.getMentions();
                     else throw new UnsupportedOperationException("Invalid class for option");
-                } else {
-                    if (customContexts.containsKey(parameterType)) object = customContexts.get(parameterType);
-                    else if (parameterType == SlashCommandInteractionEvent.class) object = event;
-                    else if (parameterType == InteractionHook.class) object = hook;
-                    else if (parameterType == User.class) object = event.getUser();
-                    else if (parameterType == Member.class) object = event.getMember();
-                    else if (parameterType == Guild.class) object = event.getGuild();
-                    else if (MessageChannel.class.isAssignableFrom(parameterType)) object = event.getChannel();
-                    else if (parameterType == JDA.class) object = event.getJDA().getShardManager();
-                    else if (parameterType == ShardManager.class) object = event.getJDA();
-                    else throw new UnsupportedOperationException("Unsupported parameter type");
-                }
+                } else object = parameterType == InteractionHook.class ? hook
+                        : getCorrespondingParameter(parameterType, event);
                 objects[i] = object;
             }
             try {
@@ -270,6 +332,44 @@ public class CommandMapper extends ListenerAdapter {
                 )).queue(noop, noop);
             }
         }
+    }
+
+    @Override
+    public void onMessageContextInteraction(@NotNull MessageContextInteractionEvent event) {
+        if (!messageCommands.containsKey(event.getName())) return;
+        CommandInfo<MessageCommand> command = messageCommands.get(event.getName());
+        Parameter[] parameters = command.getMethod().getParameters();
+        Object[] objects = new Object[parameters.length];
+        for (int i = 0; i < parameters.length; i++) {
+            Parameter parameter = parameters[i];
+            Class<?> parameterType = parameter.getType();
+            Object object = getCorrespondingParameter(parameterType, event);
+            objects[i] = object;
+        }
+        try {
+            command.getMethod().invoke(command.getInstance(), objects);
+        } catch (IllegalAccessException e) {
+            logger.error("Cannot access command {}", event.getName(), e);
+        } catch (InvocationTargetException e) {
+            logger.error("Encountered unexpected error while executing command {}", event.getFullCommandName(), e);
+            MessageChannelUnion channel = event.getChannel();
+            if (channel != null) channel.sendMessage(String.format(
+                    ":x: Encountered exception while executing command. Please try again later\nError:\n```%s```",
+                    e.getMessage()
+            )).queue(noop, noop);
+        }
+    }
+
+    private Object getCorrespondingParameter(Class<?> parameterType, GenericCommandInteractionEvent event) {
+        if (customContexts.containsKey(parameterType)) return customContexts.get(parameterType);
+        else if (parameterType == SlashCommandInteractionEvent.class) return event;
+        else if (parameterType == User.class) return event.getUser();
+        else if (parameterType == Member.class) return event.getMember();
+        else if (parameterType == Guild.class) return event.getGuild();
+        else if (MessageChannel.class.isAssignableFrom(parameterType)) return event.getChannel();
+        else if (parameterType == JDA.class) return event.getJDA().getShardManager();
+        else if (parameterType == ShardManager.class) return event.getJDA();
+        else throw new UnsupportedOperationException("Unsupported parameter type: " + parameterType.getSimpleName());
     }
 
     @Nullable
@@ -312,7 +412,7 @@ public class CommandMapper extends ListenerAdapter {
             }
             try {
                 hook.getMethod().invoke(hook.getInstance(), objects);
-            }  catch (IllegalAccessException e) {
+            } catch (IllegalAccessException e) {
                 logger.error("Cannot access hook {}", customId, e);
             } catch (InvocationTargetException e) {
                 logger.error("Encountered unexpected error while executing hook {}", customId, e);
@@ -353,5 +453,6 @@ public class CommandMapper extends ListenerAdapter {
         return ready;
     }
 
-    private static final Consumer<Object> noop = o -> {};
+    private static final Consumer<Object> noop = o -> {
+    };
 }
