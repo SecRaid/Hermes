@@ -30,6 +30,6 @@ public @interface CommandOption {
 
     GlobalChannelType channelType() default GlobalChannelType.ALL;
     boolean required() default true;
-    double minValue() default Long.MIN_VALUE;
-    double maxValue() default Long.MAX_VALUE;
+    double minValue() default Double.MIN_VALUE;
+    double maxValue() default Double.MAX_VALUE;
 }

@@ -151,8 +151,18 @@ public class CommandMapper extends ListenerAdapter {
             if (optionType == OptionType.CHANNEL) option.setChannelTypes(commandOption.channelType().getChannelTypes());
             if (commandOption.type() == OptionType.UNKNOWN && parameter.getType() == Integer.class)
                 option.setMinValue(Integer.MIN_VALUE).setMinValue(Integer.MAX_VALUE);
-            if (commandOption.minValue() != Long.MIN_VALUE) option.setMinValue(commandOption.minValue());
-            if (commandOption.maxValue() != Long.MAX_VALUE) option.setMinValue(commandOption.maxValue());
+            if (commandOption.minValue() != Double.MIN_VALUE) {
+                if (optionType == OptionType.NUMBER) option.setMinValue(commandOption.minValue());
+                else if (optionType == OptionType.INTEGER) option.setMinValue((int) commandOption.minValue());
+                else throw new IllegalArgumentException("Cannot set minimum value for option type "
+                            + optionType);
+            }
+            if (commandOption.maxValue() != Double.MAX_VALUE) {
+                if (optionType == OptionType.NUMBER) option.setMinValue(commandOption.maxValue());
+                else if (optionType == OptionType.INTEGER) option.setMinValue((int) commandOption.maxValue());
+                else throw new IllegalArgumentException("Cannot set maximum value for option type "
+                            + optionType);
+            }
 
             options.add(option);
         }
@@ -220,7 +230,7 @@ public class CommandMapper extends ListenerAdapter {
                 }
                 ((SlashCommandData) commandsData.get(parentName))
                         .addSubcommands(new SubcommandData(name, desc)
-                        .addOptions(getOptions(command)));
+                                .addOptions(getOptions(command)));
             } else {
                 SlashCommandData data = Commands.slash(name, desc)
                         .setContexts(contexts)
