@@ -150,7 +150,7 @@ public class CommandMapper extends ListenerAdapter {
 
             if (optionType == OptionType.CHANNEL) option.setChannelTypes(commandOption.channelType().getChannelTypes());
             if (commandOption.type() == OptionType.UNKNOWN && parameter.getType() == Integer.class)
-                option.setMinValue(Integer.MIN_VALUE).setMinValue(Integer.MAX_VALUE);
+                option.setMinValue(Integer.MIN_VALUE).setMaxValue(Integer.MAX_VALUE);
             if (commandOption.minValue() != Double.MIN_VALUE) {
                 if (optionType == OptionType.NUMBER) option.setMinValue(commandOption.minValue());
                 else if (optionType == OptionType.INTEGER) option.setMinValue((int) commandOption.minValue());
